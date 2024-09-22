@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart'; // Import the image_picker package
+import 'my_drawer.dart';
 
 class AdminMenuPage extends StatefulWidget {
   const AdminMenuPage({super.key});
@@ -9,21 +11,20 @@ class AdminMenuPage extends StatefulWidget {
 }
 
 class _AdminMenuPageState extends State<AdminMenuPage> {
-  // Controllers for the food details
+  final ImagePicker _picker = ImagePicker(); // Initialize ImagePicker
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
   final TextEditingController _imagePathController = TextEditingController();
   final TextEditingController _categoryController = TextEditingController();
 
-  // List to hold the addon inputs
   final List<Map<String, dynamic>> _addons = [];
   final TextEditingController _addonNameController = TextEditingController();
   final TextEditingController _addonPriceController = TextEditingController();
 
-  // Function to add an addon to the list
   void _addAddon() {
-    if (_addonNameController.text.isNotEmpty && _addonPriceController.text.isNotEmpty) {
+    if (_addonNameController.text.isNotEmpty &&
+        _addonPriceController.text.isNotEmpty) {
       setState(() {
         _addons.add({
           'name': _addonNameController.text,
@@ -35,14 +36,12 @@ class _AdminMenuPageState extends State<AdminMenuPage> {
     }
   }
 
-  // Function to remove an addon from the list
   void _removeAddon(int index) {
     setState(() {
       _addons.removeAt(index);
     });
   }
 
-  // Function to submit the form and add the food item to Firestore
   Future<void> _submitForm() async {
     if (_nameController.text.isEmpty ||
         _descriptionController.text.isEmpty ||
@@ -61,47 +60,89 @@ class _AdminMenuPageState extends State<AdminMenuPage> {
     final String imagePath = _imagePathController.text;
     final String category = _categoryController.text;
 
-    // Create a food item map
+    int categoryIndex = _convertCategoryToIndex(category);
+
     Map<String, dynamic> foodItem = {
       'name': name,
       'description': description,
       'price': price,
       'imagePath': imagePath,
-      'category': category,
-      'availableAddons': _addons, // Ensure consistent naming with your model
+      'category': categoryIndex,
+      'availableAddons': _addons.isNotEmpty
+          ? _addons.map((addon) => {
+        'name': addon['name'],
+        'price': addon['price'],
+      }).toList()
+          : [],
     };
 
-    // Add the food item to Firestore
-    await FirebaseFirestore.instance.collection('menu').add(foodItem);
+    try {
+      await FirebaseFirestore.instance.collection('menu').add(foodItem);
 
-    // Clear form after submission
-    _nameController.clear();
-    _descriptionController.clear();
-    _priceController.clear();
-    _imagePathController.clear();
-    _categoryController.clear();
-    setState(() {
-      _addons.clear();
-    });
+      _nameController.clear();
+      _descriptionController.clear();
+      _priceController.clear();
+      _imagePathController.clear();
+      _categoryController.clear();
+      setState(() {
+        _addons.clear();
+      });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Food item added successfully')),
-    );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Food item added successfully')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to add food item: $e')),
+      );
+    }
+  }
+
+  int _convertCategoryToIndex(String categoryName) {
+    switch (categoryName.toLowerCase()) {
+      case 'burgers':
+        return FoodCategory.burgers.index;
+      case 'salads':
+        return FoodCategory.salads.index;
+      case 'sides':
+        return FoodCategory.sides.index;
+      case 'desserts':
+        return FoodCategory.desserts.index;
+      case 'drinks':
+        return FoodCategory.drinks.index;
+      default:
+        return -1;
+    }
+  }
+
+  Future<void> _pickImage() async {
+    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() {
+        _imagePathController.text = pickedFile.path; // Update the image path
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Add Menu Item'),
+        centerTitle: true,
+        title: const Text(
+          'Add Menu Item',
+          style: TextStyle(color: Colors.blueAccent),
+        ),
       ),
+      backgroundColor: Colors.white,
+      drawer: const MyDrawer(),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Input fields for food item details
               TextField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Food Name'),
@@ -115,18 +156,26 @@ class _AdminMenuPageState extends State<AdminMenuPage> {
                 decoration: const InputDecoration(labelText: 'Price'),
                 keyboardType: TextInputType.number,
               ),
-              TextField(
-                controller: _imagePathController,
-                decoration: const InputDecoration(labelText: 'Image Path'),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _imagePathController,
+                      decoration: const InputDecoration(labelText: 'Image Path'),
+                      readOnly: true,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.image),
+                    onPressed: _pickImage,
+                  ),
+                ],
               ),
               TextField(
                 controller: _categoryController,
                 decoration: const InputDecoration(labelText: 'Category'),
               ),
-
               const SizedBox(height: 20),
-
-              // Section to input addons
               const Text(
                 'Add Addons',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -144,8 +193,6 @@ class _AdminMenuPageState extends State<AdminMenuPage> {
                 onPressed: _addAddon,
                 child: const Text('Add Addon'),
               ),
-
-              // Display the added addons in a list
               ListView.builder(
                 shrinkWrap: true,
                 itemCount: _addons.length,
@@ -161,10 +208,7 @@ class _AdminMenuPageState extends State<AdminMenuPage> {
                   );
                 },
               ),
-
               const SizedBox(height: 20),
-
-              // Submit button
               ElevatedButton(
                 onPressed: _submitForm,
                 child: const Text('Submit Food Item'),
@@ -175,4 +219,13 @@ class _AdminMenuPageState extends State<AdminMenuPage> {
       ),
     );
   }
+}
+
+// Enum representing food categories
+enum FoodCategory {
+  burgers,
+  salads,
+  sides,
+  desserts,
+  drinks,
 }
